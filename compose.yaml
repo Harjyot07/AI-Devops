@@ -43,26 +43,9 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
 
-  sonarqube:
-    image: sonarqube:community
-    container_name: sonarqube
-    ports:
-      - "9000:9000"
-    networks:
-      - app-network
-    environment:
-      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
-    volumes:
-      - sonarqube_data:/opt/sonarqube/data
-      - sonarqube_logs:/opt/sonarqube/logs
-      - sonarqube_extensions:/opt/sonarqube/extensions
-
 networks:
   app-network:
     driver: bridge
 
 volumes:
   grafana-data:
-  sonarqube_data:
-  sonarqube_logs:
-  sonarqube_extensions:
