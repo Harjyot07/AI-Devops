@@ -1,51 +1,33 @@
-version: '3.8'
-
 services:
   backend:
-    build:
-      context: ./backend
-    image: ${BACKEND_IMAGE:-ai-jenkins-backend:latest}
-    container_name: backend
-    ports:
-      - "3001:3001"
-    networks:
-      - app-network
-
+    # ... existing
+  
   frontend:
-    build:
-      context: ./frontend
-    image: ${FRONTEND_IMAGE:-ai-jenkins-frontend:latest}
-    container_name: frontend
-    ports:
-      - "3000:3000"
-    networks:
-      - app-network
-
+    # ... existing
+  
   prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - app-network
-
+    # ... existing
+  
   grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3003:3000"
-    networks:
-      - app-network
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    # ... existing
+  
+  # 🆕 FREE LOCAL AI
+  ollama:
+    image: ollama/ollama:latest
     volumes:
-      - grafana-data:/var/lib/grafana
-
-networks:
-  app-network:
-    driver: bridge
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_ORIGINS=*
+    # For GPU support (optional):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
 volumes:
-  grafana-data:
+  ollama-data:
