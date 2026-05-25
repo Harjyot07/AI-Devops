@@ -28,6 +28,9 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 echo "Building ${FRONTEND_IMAGE}..."
+                                docker stop $(docker ps -q)
+                                docker rm $(docker ps -aq)
+                                docker image prune -a -f
                                 docker build -t ${FRONTEND_IMAGE} .
                             '''
                         }
@@ -51,7 +54,7 @@ pipeline {
                 sh '''
                     echo "Stopping old containers..."
                     docker compose down || true
-
+                    
                     echo "Starting with new images..."
                     export FRONTEND_IMAGE=${FRONTEND_IMAGE}
                     export BACKEND_IMAGE=${BACKEND_IMAGE}
