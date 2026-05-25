@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'ubuntu && docker' }
+    agent { label 'ubuntu' }
 
     environment {
         // Git commit for traceability
