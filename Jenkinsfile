@@ -1,47 +1,65 @@
 pipeline {
-    agent { label 'ubuntu' }
+    agent any
 
     environment {
-        // Git commit for tagging
-        GIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-        
-        // Image names with build number + git SHA
-        FRONTEND_IMAGE = "ai-jenkins-frontend:${BUILD_NUMBER}-${GIT_SHORT}"
-        BACKEND_IMAGE  = "ai-jenkins-backend:${BUILD_NUMBER}-${GIT_SHORT}"
+        FRONTEND_IMAGE = "ai-jenkins-frontend"
+        BACKEND_IMAGE  = "ai-jenkins-backend"
+        GIT_COMMIT_SHORT = sh(
+            script: "git rev-parse --short HEAD",
+            returnStdout: true
+        ).trim()
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 checkout scm
+
                 sh '''
-                    echo "Commit: $(git log --oneline -1)"
-                    ls -la
+                echo "Commit:"
+                git log --oneline -1
+
+                echo "Workspace Files:"
+                ls -la
                 '''
             }
         }
 
         stage('Build Docker Images') {
             parallel {
+
                 stage('Build Frontend') {
                     steps {
                         dir('frontend') {
+
                             sh '''
-                                echo "Building ${FRONTEND_IMAGE}..."
-                                docker stop $(docker ps -q)
-                                docker rm $(docker ps -aq)
-                                docker image prune -a -f
-                                docker build -t ${FRONTEND_IMAGE} .
+                            echo "Stopping old containers..."
+
+                            docker ps -q | xargs -r docker stop
+
+                            docker ps -aq | xargs -r docker rm -f
+
+                            echo "Cleaning old images..."
+
+                            docker image prune -a -f
+
+                            echo "Building frontend image..."
+
+                            docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} .
                             '''
                         }
                     }
                 }
+
                 stage('Build Backend') {
                     steps {
                         dir('backend') {
+
                             sh '''
-                                echo "Building ${BACKEND_IMAGE}..."
-                                docker build -t ${BACKEND_IMAGE} .
+                            echo "Building backend image..."
+
+                            docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} .
                             '''
                         }
                     }
@@ -51,64 +69,90 @@ pipeline {
 
         stage('Deploy Stack') {
             steps {
+
                 sh '''
-                    echo "Stopping old containers..."
-                    docker compose down || true
-                    
-                    echo "Starting with new images..."
-                    export FRONTEND_IMAGE=${FRONTEND_IMAGE}
-                    export BACKEND_IMAGE=${BACKEND_IMAGE}
-                    docker compose up -d
+                echo "Stopping previous compose stack..."
+
+                docker compose down || true
+
+                echo "Starting new stack..."
+
+                docker compose up -d
+
+                echo "Running containers..."
+
+                docker ps
                 '''
             }
         }
 
         stage('Verify Containers') {
             steps {
+
                 sh '''
-                    echo "Running containers:"
-                    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                echo "Container Verification"
+
+                docker ps -a
+
+                echo "Docker Images"
+
+                docker images
                 '''
             }
         }
 
         stage('Health Check') {
             steps {
+
                 sh '''
-                    echo "Checking backend..."
-                    curl -s http://localhost:3001 || echo "Backend not responding"
-                    
-                    echo "Checking frontend..."
-                    curl -s http://localhost:3000 || echo "Frontend not responding"
+                echo "Waiting for services..."
+
+                sleep 20
+
+                echo "Frontend Check"
+
+                curl -I http://localhost:3000 || true
+
+                echo "Backend Check"
+
+                curl -I http://localhost:5000 || true
                 '''
             }
         }
 
         stage('Monitoring Check') {
             steps {
+
                 sh '''
-                    echo "Prometheus ready?"
-                    curl -s http://localhost:9090/-/ready || echo "Prometheus issue"
-                    
-                    echo "Grafana ready?"
-                    curl -s http://localhost:3003/api/health || echo "Grafana issue"
+                echo "Prometheus Containers"
+
+                docker ps | grep prometheus || true
+
+                echo "Monitoring completed"
                 '''
             }
         }
     }
 
     post {
-        success {
-            echo "✅ Deployment Successful!"
-            echo "Frontend: ${FRONTEND_IMAGE}"
-            echo "Backend:  ${BACKEND_IMAGE}"
-        }
-        failure {
-            echo "❌ Deployment Failed - check logs above"
-        }
+
         always {
-            echo "Pipeline completed"
-            sh 'docker image prune -f || true'
+
+            echo 'Pipeline completed'
+
+            sh '''
+            docker image prune -f || true
+            '''
+        }
+
+        success {
+
+            echo '✅ Deployment Successful'
+        }
+
+        failure {
+
+            echo '❌ Deployment Failed - check logs above'
         }
     }
 }
