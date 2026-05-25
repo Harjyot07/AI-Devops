@@ -1,18 +1,23 @@
 services:
-
   backend:
     build:
       context: ./backend
+    image: ${BACKEND_IMAGE:-ai-jenkins-backend:latest}  # Named image
     container_name: backend
     ports:
       - "3001:3001"
+    networks:
+      - app-network  # ✅ Added
 
   frontend:
     build:
       context: ./frontend
+    image: ${FRONTEND_IMAGE:-ai-jenkins-frontend:latest}  # Named image
     container_name: frontend
     ports:
       - "3000:3000"
+    networks:
+      - app-network  # ✅ Added
 
   prometheus:
     image: prom/prometheus
@@ -21,9 +26,19 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
+    networks:
+      - app-network  # ✅ Added
 
   grafana:
     image: grafana/grafana
     container_name: grafana
     ports:
-      - "3002:3000"
+      - "3003:3000"  # ✅ Changed from 3002 to 3003
+    networks:
+      - app-network  # ✅ Added
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+
+networks:
+  app-network:
+    driver: bridge  # ✅ All containers connect here

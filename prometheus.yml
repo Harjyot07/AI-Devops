@@ -1,11 +1,18 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
 
 scrape_configs:
-  - job_name: "backend"
+  # Monitor Prometheus itself
+  - job_name: 'prometheus'
     static_configs:
-      - targets: ["backend:3001"]
+      - targets: ['localhost:9090']
 
-  - job_name: "frontend"
+  # Monitor frontend (must match container name on same network)
+  - job_name: 'frontend'
     static_configs:
-      - targets: ["frontend:3000"]
+      - targets: ['frontend:3000']
+
+  # Monitor backend (must match container name on same network)
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:3001']
