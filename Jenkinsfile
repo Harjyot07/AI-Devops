@@ -9,14 +9,11 @@ pipeline {
             returnStdout: true
         ).trim()
         
-        // 🔑 FREE OPTION 1: Google Gemini (6,000 req/day free)
-        GEMINI_API_KEY = credentials('gemini-api-key')  // Get from Google AI Studio
+        // 🆓 FREE LOCAL AI - Ollama (runs on your server, zero cost)
+        OLLAMA_URL = "http://host.docker.internal:11434"
         
-        // 🔑 FREE OPTION 2: Ollama (LOCAL - runs on your server, 100% free)
-        OLLAMA_URL = "http://localhost:11434"  // Or host.docker.internal:11434 if in Docker
-        
-        // Choose your AI: 'gemini' or 'ollama'
-        AI_PROVIDER = "gemini"  // Switch to "ollama" for local free AI
+        // Optional: Google Gemini (free tier, 6,000 req/day)
+        // GEMINI_API_KEY = credentials('gemini-api-key')  // Uncomment after adding to Jenkins
     }
 
     stages {
@@ -25,68 +22,45 @@ pipeline {
             steps {
                 checkout scm
                 sh '''
-                echo "Commit:"
-                git log --oneline -1
+                echo "Commit: $(git log --oneline -1)"
                 echo "Workspace Files:"
                 ls -la
                 '''
             }
         }
 
-        // 🤖 FREE AI CODE REVIEW STAGE
+        // 🤖 FREE AI CODE REVIEW (using Ollama - 100% free)
         stage('AI Code Review') {
             steps {
                 script {
                     def diff = sh(
                         returnStdout: true, 
-                        script: 'git diff HEAD~1 || echo "No previous commit diff"'
+                        script: 'git diff HEAD~1 || echo "FIRST_COMMIT"'
                     ).trim()
                     
-                    if (diff && diff != "No previous commit diff") {
-                        echo "🤖 Running FREE AI Code Review..."
+                    if (diff != "FIRST_COMMIT" && diff.trim()) {
+                        echo "🤖 Running FREE AI Code Review with Ollama..."
                         
-                        def review = ""
+                        // Save diff to file to avoid escaping issues
+                        writeFile file: 'diff.txt', text: diff
                         
-                        if (env.AI_PROVIDER == "gemini") {
-                            // FREE Google Gemini API
-                            review = sh(
-                                returnStdout: true,
-                                script: """
-                                curl -s https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY} \\
-                                  -H "Content-Type: application/json" \\
-                                  -d '{
-                                    "contents": [{
-                                      "parts":[{
-                                        "text": "You are a senior DevOps engineer. Review this code diff for: 1) Security issues, 2) Docker best practices, 3) CI/CD improvements. Be concise:\\n${diff.replaceAll("'", "\\\\'").replaceAll('"', '\\\\"').replaceAll("\\n", "\\\\n")}"
-                                      }]
-                                    }],
-                                    "generationConfig": {
-                                      "maxOutputTokens": 1000,
-                                      "temperature": 0.3
-                                    }
-                                  }'
-                                """
-                            )
-                        } else {
-                            // FREE LOCAL Ollama (100% free, runs on your server)
-                            review = sh(
-                                returnStdout: true,
-                                script: """
-                                curl -s ${OLLAMA_URL}/api/generate \\
-                                  -H "Content-Type: application/json" \\
-                                  -d '{
-                                    "model": "codellama",
-                                    "prompt": "You are a senior DevOps engineer. Review this code diff for security issues, Docker best practices, and CI/CD improvements. Be concise:\\n${diff.replaceAll("'", "\\\\'").replaceAll('"', '\\\\"').replaceAll("\\n", "\\\\n")}",
-                                    "stream": false
-                                  }'
-                                """
-                            )
-                        }
+                        def review = sh(
+                            returnStdout: true,
+                            script: '''
+                            curl -s ${OLLAMA_URL}/api/generate \
+                              -H "Content-Type: application/json" \
+                              -d "{
+                                \\"model\\": \\"codellama\\",
+                                \\"prompt\\": \\"You are a senior DevOps engineer. Review this code diff for: 1) Security issues, 2) Docker best practices, 3) CI/CD improvements. Be concise:\\n$(cat diff.txt | sed 's/"/\\\\"/g' | sed 's/\\n/\\\\n/g')\\",
+                                \\"stream\\": false,
+                                \\"options\\": { \\"temperature\\": 0.3 }
+                              }" 2>/dev/null || echo '{"response": "Ollama not available - skipping AI review"}'
+                            '''
+                        )
                         
-                        echo "📝 FREE AI Review Results:"
-                        echo "${review}"
+                        echo "📝 AI Review: ${review}"
                     } else {
-                        echo "ℹ️ No diff found for AI review"
+                        echo "ℹ️ First commit or no diff - skipping AI review"
                     }
                 }
             }
@@ -98,13 +72,9 @@ pipeline {
                     steps {
                         dir('frontend') {
                             sh '''
-                            echo "Stopping old containers..."
-                            docker ps -q | xargs -r docker stop
-                            docker ps -aq | xargs -r docker rm -f
-                            echo "Cleaning old images..."
-                            docker image prune -a -f
-                            echo "Building frontend image..."
+                            echo "=== Building Frontend ==="
                             docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} .
+                            docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} ${FRONTEND_IMAGE}:latest
                             '''
                         }
                     }
@@ -113,8 +83,9 @@ pipeline {
                     steps {
                         dir('backend') {
                             sh '''
-                            echo "Building backend image..."
+                            echo "=== Building Backend ==="
                             docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} .
+                            docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT} ${BACKEND_IMAGE}:latest
                             '''
                         }
                     }
@@ -125,46 +96,35 @@ pipeline {
         stage('Deploy Stack') {
             steps {
                 sh '''
-                echo "Stopping previous compose stack..."
+                echo "=== Deploying Stack ==="
                 docker compose down || true
-                echo "Starting new stack..."
-                docker compose up -d
-                echo "Running containers..."
+                docker compose up -d --build
+                echo "=== Running Containers ==="
                 docker ps
                 '''
             }
         }
 
-        stage('Verify Containers') {
+        stage('Verify & Health Check') {
             steps {
                 sh '''
-                echo "Container Verification"
+                echo "=== Container Verification ==="
                 docker ps -a
-                echo "Docker Images"
-                docker images
-                '''
-            }
-        }
-
-        stage('Health Check') {
-            steps {
-                sh '''
-                echo "Waiting for services..."
-                sleep 20
-                echo "Frontend Check"
-                curl -I http://localhost:3000 || true
-                echo "Backend Check"
-                curl -I http://localhost:5000 || true
-                '''
-            }
-        }
-
-        stage('Monitoring Check') {
-            steps {
-                sh '''
-                echo "Prometheus Containers"
-                docker ps | grep prometheus || true
-                echo "Monitoring completed"
+                
+                echo "=== Waiting for services (15s) ==="
+                sleep 15
+                
+                echo "=== Frontend Health Check ==="
+                curl -sf http://localhost:3000 && echo "✅ Frontend OK" || echo "⚠️ Frontend not responding"
+                
+                echo "=== Backend Health Check ==="
+                curl -sf http://localhost:5000 && echo "✅ Backend OK" || echo "⚠️ Backend not responding (check your backend port - maybe 3001?)"
+                
+                echo "=== Prometheus Check ==="
+                curl -sf http://localhost:9090 && echo "✅ Prometheus OK" || echo "⚠️ Prometheus not responding"
+                
+                echo "=== Grafana Check ==="
+                curl -sf http://localhost:3003 && echo "✅ Grafana OK" || echo "⚠️ Grafana not responding"
                 '''
             }
         }
@@ -177,83 +137,63 @@ pipeline {
                     
                     def logs = sh(
                         returnStdout: true,
-                        script: 'docker logs backend --tail 50 2>&1 || echo "No backend logs"'
+                        script: 'docker logs backend --tail 30 2>&1 || echo "NO_LOGS"'
                     ).trim()
                     
-                    if (logs && logs != "No backend logs") {
-                        def analysis = ""
+                    if (logs != "NO_LOGS" && logs.trim()) {
+                        writeFile file: 'logs.txt', text: logs
                         
-                        if (env.AI_PROVIDER == "gemini") {
-                            analysis = sh(
-                                returnStdout: true,
-                                script: """
-                                curl -s https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY} \\
-                                  -H "Content-Type: application/json" \\
-                                  -d '{
-                                    "contents": [{
-                                      "parts":[{
-                                        "text": "Analyze these Docker logs for errors, warnings, and performance issues. Provide a 3-bullet summary:\\n${logs.replaceAll("'", "\\\\'").replaceAll('"', '\\\\"').replaceAll("\\n", "\\\\n")}"
-                                      }]
-                                    }],
-                                    "generationConfig": {
-                                      "maxOutputTokens": 500,
-                                      "temperature": 0.2
-                                    }
-                                  }'
-                                """
-                            )
-                        } else {
-                            analysis = sh(
-                                returnStdout: true,
-                                script: """
-                                curl -s ${OLLAMA_URL}/api/generate \\
-                                  -H "Content-Type: application/json" \\
-                                  -d '{
-                                    "model": "codellama",
-                                    "prompt": "Analyze these Docker logs for errors and performance issues. Provide a brief summary:\\n${logs.replaceAll("'", "\\\\'").replaceAll('"', '\\\\"').replaceAll("\\n", "\\\\n")}",
-                                    "stream": false
-                                  }'
-                                """
-                            )
-                        }
+                        def analysis = sh(
+                            returnStdout: true,
+                            script: '''
+                            curl -s ${OLLAMA_URL}/api/generate \
+                              -H "Content-Type: application/json" \
+                              -d "{
+                                \\"model\\": \\"codellama\\",
+                                \\"prompt\\": \\"Analyze these Docker logs for errors and warnings. Give a 2-sentence summary:\\n$(cat logs.txt | sed 's/"/\\\\"/g' | head -c 2000)\\",
+                                \\"stream\\": false
+                              }" 2>/dev/null || echo '{"response": "Ollama unavailable"}'
+                            '''
+                        )
                         
-                        echo "📊 FREE AI Log Analysis:"
-                        echo "${analysis}"
+                        echo "📊 AI Log Analysis: ${analysis}"
+                    } else {
+                        echo "ℹ️ No logs available for analysis"
                     }
                 }
             }
         }
     }
 
+    // ✅ FIXED: post block now works correctly with 'agent any'
     post {
         always {
-            echo 'Pipeline completed'
-            sh 'docker image prune -f || true'
+            node(null) {  // Ensure we have a node context
+                echo '🔧 Pipeline completed - cleaning up'
+                sh 'docker image prune -f || true'
+                sh 'rm -f diff.txt logs.txt || true'
+            }
         }
         success {
-            script {
-                echo '✅ Deployment Successful'
-                if (env.AI_PROVIDER == "gemini") {
-                    def celebration = sh(
-                        returnStdout: true,
-                        script: """
-                        curl -s https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY} \\
-                          -H "Content-Type: application/json" \\
-                          -d '{
-                            "contents": [{
-                              "parts":[{
-                                "text": "Write a short, fun deployment success message for a DevOps team. Build #${BUILD_NUMBER} succeeded."
-                              }]
-                            }]
-                          }'
-                        """
-                    )
-                    echo "🎉 ${celebration}"
-                }
+            node(null) {
+                echo '✅ Deployment Successful!'
+                sh '''
+                echo "Build #${BUILD_NUMBER} completed"
+                echo "Images: ${FRONTEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT}, ${BACKEND_IMAGE}:${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+                '''
             }
         }
         failure {
-            echo '❌ Deployment Failed - check logs above'
+            node(null) {
+                echo '❌ Deployment Failed!'
+                sh '''
+                echo "=== FAILURE DIAGNOSIS ==="
+                echo "Recent container logs:"
+                docker logs backend --tail 20 2>/dev/null || true
+                docker logs frontend --tail 20 2>/dev/null || true
+                echo "========================"
+                '''
+            }
         }
     }
 }

@@ -1,26 +1,41 @@
 services:
   backend:
-    # ... existing
-  
+    build: ./backend
+    ports:
+      - "3001:3001"
+    # ... your existing config
+
   frontend:
-    # ... existing
-  
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    # ... your existing config
+
   prometheus:
-    # ... existing
-  
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    # ... your existing config
+
   grafana:
-    # ... existing
-  
-  # 🆕 FREE LOCAL AI
+    image: grafana/grafana:latest
+    ports:
+      - "3003:3000"
+    # ... your existing config
+
+  # 🆕 FREE AI SERVICE - Ollama
   ollama:
     image: ollama/ollama:latest
+    container_name: ollama
     volumes:
       - ollama-data:/root/.ollama
     ports:
       - "11434:11434"
     environment:
       - OLLAMA_ORIGINS=*
-    # For GPU support (optional):
+    # If you have NVIDIA GPU:
     # deploy:
     #   resources:
     #     reservations:
