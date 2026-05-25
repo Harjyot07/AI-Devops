@@ -2,22 +2,22 @@ services:
   backend:
     build:
       context: ./backend
-    image: ${BACKEND_IMAGE:-ai-jenkins-backend:latest}  # Named image
+    image: ${BACKEND_IMAGE:-ai-jenkins-backend:latest}
     container_name: backend
     ports:
       - "3001:3001"
     networks:
-      - app-network  # ✅ Added
+      - app-network
 
   frontend:
     build:
       context: ./frontend
-    image: ${FRONTEND_IMAGE:-ai-jenkins-frontend:latest}  # Named image
+    image: ${FRONTEND_IMAGE:-ai-jenkins-frontend:latest}
     container_name: frontend
     ports:
       - "3000:3000"
     networks:
-      - app-network  # ✅ Added
+      - app-network
 
   prometheus:
     image: prom/prometheus
@@ -27,18 +27,38 @@ services:
     ports:
       - "9090:9090"
     networks:
-      - app-network  # ✅ Added
+      - app-network
 
   grafana:
     image: grafana/grafana
     container_name: grafana
     ports:
-      - "3003:3000"  # ✅ Changed from 3002 to 3003
+      - "3003:3000"
     networks:
-      - app-network  # ✅ Added
+      - app-network
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin123
 
+  # NEW: SonarQube Server
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    networks:
+      - app-network
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+
 networks:
   app-network:
-    driver: bridge  # ✅ All containers connect here
+    driver: bridge
+
+volumes:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
