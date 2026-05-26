@@ -17,7 +17,7 @@ pipeline {
         KUBECONFIG_CREDENTIALS = "kubeconfig"  // Add kubeconfig to Jenkins Credentials
         
         // Registry Configuration
-        REGISTRY_URL = "localhost:5000"  // CHANGE THIS to your registry
+        REGISTRY_URL = "localhost:5003"  // CHANGE THIS to your registry
         
         // Optional: Google Gemini
         // GEMINI_API_KEY = credentials('gemini-api-key')
